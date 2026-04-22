@@ -228,7 +228,7 @@ impl Orchestrator {
         // If Rust is in the tech stack, run cargo test
         if tech_stack.iter().any(|t| t == "Rust") && self.repo_path != "/dev/null" {
             match self.code_runner.execute("cargo", &["test"], 120).await {
-                Ok(stdout) => {
+                Ok(_stdout) => {
                     workflows_tested.push(Workflow {
                         name: "cargo test".to_string(),
                         steps: vec!["cargo test".to_string()],

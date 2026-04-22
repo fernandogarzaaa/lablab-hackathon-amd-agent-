@@ -4,8 +4,39 @@ use crate::agents::base::{Agent, AgentContext};
 use crate::core::types::*;
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::json;
+use serde::Deserialize;
 use tracing::info;
+
+#[derive(Debug, Deserialize)]
+struct LlmBuildOutput {
+    changes: Vec<LlmFileChange>,
+    summary: String,
+    confidence: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct LlmFileChange {
+    path: String,
+    operation: String,
+    content: String,
+}
+
+impl From<LlmFileChange> for FileChange {
+    fn from(change: LlmFileChange) -> Self {
+        let operation = match change.operation.to_lowercase().as_str() {
+            "create" => ChangeOperation::Create,
+            "update" => ChangeOperation::Update,
+            "delete" => ChangeOperation::Delete,
+            _ => ChangeOperation::Create,
+        };
+        FileChange {
+            path: change.path,
+            operation,
+            content: change.content,
+            confidence: 0.85,
+        }
+    }
+}
 
 pub struct BuilderAgent;
 
@@ -24,6 +55,40 @@ impl Agent for BuilderAgent {
             .map(|a| a.iter().map(|v| serde_json::from_value(v.clone()).unwrap()).collect())
             .unwrap_or_default();
 
+        let repo_path = ctx.repo_path.as_deref().unwrap_or("/dev/null");
+
+        // Try LLM for code generation
+        if let Some(ref llm) = ctx.llm_client {
+            if let Some(llm_build) = self.try_llm_build(&tasks, repo_path, llm).await {
+                // Write real files via FileManager
+                if let Some(ref fm) = ctx.repo_path {
+                    for change in &llm_build.changes {
+                        let full_path = std::path::Path::new(fm).join(&change.path);
+                        if let Some(parent) = full_path.parent() {
+                            if let Ok(()) = std::fs::create_dir_all(parent) {
+                                if let Err(e) = std::fs::write(&full_path, &change.content) {
+                                    tracing::warn!("Failed to write {}: {}", change.path, e);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let build_output = BuildOutput {
+                    changes: llm_build.changes.into_iter().map(Into::into).collect(),
+                    summary: llm_build.summary,
+                    tests_run: false,
+                    confidence: llm_build.confidence,
+                };
+
+                return Ok(serde_json::json!({
+                    "build_output": build_output,
+                    "confidence": llm_build.confidence,
+                }));
+            }
+        }
+
+        // Fallback: simulated changes
         let max_tasks = tasks.len().max(3);
         let mut changes = Vec::new();
         for task in tasks.iter().take(max_tasks) {
@@ -43,7 +108,7 @@ impl Agent for BuilderAgent {
             confidence: 0.87,
         };
 
-        Ok(json!({
+        Ok(serde_json::json!({
             "build_output": build_output,
             "confidence": 0.87,
         }))
@@ -63,5 +128,76 @@ impl Agent for BuilderAgent {
 
     fn min_confidence(&self) -> f64 {
         0.85
+    }
+}
+
+impl BuilderAgent {
+    async fn try_llm_build(
+        &self,
+        tasks: &[RoadmapTask],
+        repo_path: &str,
+        llm: &crate::llm::LlmClient,
+    ) -> Option<LlmBuildOutput> {
+        let system = self.prompt_template();
+
+        // Read content of files to be modified
+        let file_contents = self.read_target_files(repo_path, tasks);
+        let roadmap_str: String = tasks.iter().enumerate()
+            .map(|(i, t)| {
+                let files = if t.file_paths.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n     Files: {:?}", t.file_paths)
+                };
+                format!(
+                    "  {}. [{}] {} (effort: {:?})\n     {}{}",
+                    i + 1, t.priority, t.title, t.effort, t.description, files
+                )
+            })
+            .collect();
+
+        let file_block = if tasks.is_empty() {
+            String::new()
+        } else {
+            let paths: Vec<String> = tasks.iter()
+                .flat_map(|t| t.file_paths.clone())
+                .collect();
+            format!("\n     Files: {:?}", paths)
+        };
+
+        let prompt = format!(
+            "Implement the following roadmap tasks. Generate production-quality code.\n\nRoadmap:\n{}\n\n\
+             Target files content:{}{}",
+            roadmap_str, file_contents, file_block
+        );
+
+        let response = llm.generate(system, &prompt).await.ok()?;
+        let json_str = response.trim();
+        // Handle markdown-wrapped JSON
+        let json_str = if json_str.contains("```") {
+            json_str.split("```").nth(1).unwrap_or(json_str)
+        } else {
+            json_str
+        };
+        serde_json::from_str(json_str).ok()
+    }
+
+    fn read_target_files(&self, repo_path: &str, tasks: &[RoadmapTask]) -> String {
+        let base = std::path::Path::new(repo_path);
+        let mut all_files = std::collections::HashSet::new();
+        for task in tasks {
+            for path in &task.file_paths {
+                all_files.insert(path.clone());
+            }
+        }
+
+        let mut output = String::new();
+        for file_path in all_files {
+            let full = base.join(&file_path);
+            if let Ok(content) = std::fs::read_to_string(&full) {
+                output.push_str(&format!("\n--- {} ---\n{}\n", file_path, content.chars().take(2000).collect::<String>()));
+            }
+        }
+        output
     }
 }

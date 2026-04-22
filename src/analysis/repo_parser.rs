@@ -25,7 +25,7 @@ impl RepoParser {
         let mut file_types = std::collections::HashMap::new();
 
         fn walk(path: &str, dirs: &mut Vec<String>, files: &mut Vec<String>, types: &mut std::collections::HashMap<String, u32>) {
-            let mut entries = match std::fs::read_dir(path) {
+            let entries = match std::fs::read_dir(path) {
                 Ok(e) => e,
                 Err(_) => return,
             };
