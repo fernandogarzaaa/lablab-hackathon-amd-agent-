@@ -29,17 +29,27 @@ impl Agent for AnalystAgent {
     async fn run(&self, _input: serde_json::Value, ctx: &AgentContext) -> Result<serde_json::Value> {
         info!("[ANALYST] Starting repository analysis (iteration {})", ctx.iteration);
 
-        let structure = self.parser.parse_structure();
-        let tech_stack = self.tech_detector.detect();
-        let issues = self.issue_detector.detect(&structure);
+        let repo_path = ctx.repo_path.as_deref().unwrap_or("/dev/null");
 
-        info!("[ANALYST] Found {} directories, {} tech stack items, {} issues",
-            structure.directories.len(), tech_stack.len(), issues.len());
+        let structure = self.parser.parse_structure(repo_path);
+        let tech_stack = if repo_path == "/dev/null" {
+            self.tech_detector.detect("")
+        } else {
+            self.tech_detector.detect(repo_path)
+        };
+        let issues = if repo_path == "/dev/null" {
+            Vec::new()
+        } else {
+            self.issue_detector.detect(repo_path, &structure)
+        };
+
+        info!("[ANALYST] Found {} dirs, {} files, {} tech items, {} issues",
+            structure.directories.len(), structure.files.len(), tech_stack.len(), issues.len());
 
         let audit_report = AuditReport {
             repo_url: String::new(),
             architecture: format!("Detected {} directories, {} files", structure.directories.len(), structure.files.len()),
-            tech_stack: tech_stack.iter().map(|t| t.clone()).collect(),
+            tech_stack,
             issues,
             confidence: 0.92,
         };

@@ -1,4 +1,4 @@
-//! DependencyMapper — maps dependency graphs.
+//! DependencyMapper — maps dependency graphs from a real repo.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +18,7 @@ pub enum DependencyType {
     External,
 }
 
-/// Maps dependencies between files and crates.
+/// Maps dependencies between files and crates from a real repo.
 pub struct DependencyMapper;
 
 impl DependencyMapper {
@@ -26,22 +26,63 @@ impl DependencyMapper {
         Self
     }
 
-    /// Build a dependency graph (simulated).
-    pub fn map(&self) -> Vec<DepEdge> {
-        vec![
-            DepEdge { from: "main.rs".to_string(), to: "lib.rs".to_string(), type_: DependencyType::Module },
-            DepEdge { from: "src/lib.rs".to_string(), to: "src/core/mod.rs".to_string(), type_: DependencyType::Module },
-            DepEdge { from: "src/lib.rs".to_string(), to: "src/agents/mod.rs".to_string(), type_: DependencyType::Module },
-            DepEdge { from: "src/lib.rs".to_string(), to: "src/analysis/mod.rs".to_string(), type_: DependencyType::Module },
-            DepEdge { from: "src/lib.rs".to_string(), to: "src/middleware/mod.rs".to_string(), type_: DependencyType::Module },
-            DepEdge { from: "src/lib.rs".to_string(), to: "src/memory/mod.rs".to_string(), type_: DependencyType::Module },
-            DepEdge { from: "src/lib.rs".to_string(), to: "src/cli/mod.rs".to_string(), type_: DependencyType::Module },
-            DepEdge { from: "Cargo.toml".to_string(), to: "tokio".to_string(), type_: DependencyType::Crate },
-            DepEdge { from: "Cargo.toml".to_string(), to: "clap".to_string(), type_: DependencyType::Crate },
-            DepEdge { from: "Cargo.toml".to_string(), to: "rusqlite".to_string(), type_: DependencyType::Crate },
-            DepEdge { from: "Cargo.toml".to_string(), to: "serde".to_string(), type_: DependencyType::Crate },
-            DepEdge { from: "Cargo.toml".to_string(), to: "reqwest".to_string(), type_: DependencyType::Crate },
-            DepEdge { from: "Cargo.toml".to_string(), to: "git2".to_string(), type_: DependencyType::Crate },
-        ]
+    /// Build a dependency graph from a real repository directory.
+    pub fn map(&self, repo_path: &str) -> Vec<DepEdge> {
+        let mut edges = Vec::new();
+        let base = std::path::Path::new(repo_path);
+
+        if let Ok(content) = std::fs::read_to_string(base.join("Cargo.toml")) {
+            // Extract dependencies from [[package]] sections
+            for line in content.lines() {
+                let line = line.trim();
+                if let Some(dep) = line.strip_prefix("name = \"") {
+                    if let Some(end) = dep.find('"') {
+                        let name = &dep[..end];
+                        edges.push(DepEdge {
+                            from: "Cargo.toml".to_string(),
+                            to: name.to_string(),
+                            type_: DependencyType::Crate,
+                        });
+                    }
+                }
+            }
+            // Also extract from [dependencies] section
+            let in_deps = content.lines().any(|l| l.trim() == "[dependencies]");
+            if in_deps {
+                let in_section = content
+                    .lines()
+                    .skip_while(|l| !l.trim().starts_with("[dependencies]"))
+                    .skip(1)
+                    .take_while(|l| l.trim().starts_with('[') == false && !l.trim().is_empty())
+                    .filter_map(|l| {
+                        l.trim().split('=').next().map(|k| k.trim().to_string())
+                    });
+                for dep_name in in_section {
+                    if dep_name != "dependencies" {
+                        edges.push(DepEdge {
+                            from: "Cargo.toml".to_string(),
+                            to: dep_name,
+                            type_: DependencyType::Crate,
+                        });
+                    }
+                }
+            }
+        }
+
+        if let Ok(content) = std::fs::read_to_string(base.join("package.json")) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(deps) = val.get("dependencies").and_then(|d| d.as_object()) {
+                    for name in deps.keys() {
+                        edges.push(DepEdge {
+                            from: "package.json".to_string(),
+                            to: name.to_string(),
+                            type_: DependencyType::Crate,
+                        });
+                    }
+                }
+            }
+        }
+
+        edges
     }
 }

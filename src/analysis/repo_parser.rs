@@ -1,4 +1,4 @@
-//! RepoParser — parses directory structure and identifies tech stack.
+//! RepoParser — parses directory structure and identifies tech stack from a real repo.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,59 +18,46 @@ impl RepoParser {
         Self
     }
 
-    /// Parse a repository structure (simulated for now; will use git2 in production).
-    pub fn parse_structure(&self) -> RepoStructure {
-        // Simulated analysis — in production, this walks the actual cloned repo
-        let directories = vec![
-            "src".to_string(),
-            "tests".to_string(),
-            "benches".to_string(),
-            "config".to_string(),
-            "prompts".to_string(),
-            "src/agents".to_string(),
-            "src/core".to_string(),
-            "src/analysis".to_string(),
-            "src/middleware".to_string(),
-            "src/memory".to_string(),
-            "src/execution".to_string(),
-            "src/cli".to_string(),
-            "src/llm".to_string(),
-        ];
-
-        let files = vec![
-            "Cargo.toml".to_string(),
-            "main.rs".to_string(),
-            "lib.rs".to_string(),
-            "src/core/types.rs".to_string(),
-            "src/core/orchestrator.rs".to_string(),
-            "src/core/state.rs".to_string(),
-            "src/agents/base.rs".to_string(),
-            "src/agents/analyst.rs".to_string(),
-            "src/agents/planner.rs".to_string(),
-            "src/agents/builder.rs".to_string(),
-            "src/agents/tester.rs".to_string(),
-            "src/agents/critic.rs".to_string(),
-            "src/middleware/chimera.rs".to_string(),
-            "src/middleware/gate.rs".to_string(),
-            "src/middleware/types.rs".to_string(),
-            "src/memory/store.rs".to_string(),
-            "src/memory/semantic.rs".to_string(),
-            "src/memory/search.rs".to_string(),
-            "src/memory/compression.rs".to_string(),
-            "src/analysis/repo_parser.rs".to_string(),
-            "src/analysis/dep_mapper.rs".to_string(),
-            "src/analysis/issue_detect.rs".to_string(),
-            "src/cli/mod.rs".to_string(),
-            "src/cli/analyze.rs".to_string(),
-            "src/llm/client.rs".to_string(),
-            "src/llm/routing.rs".to_string(),
-        ];
-
+    /// Parse a real repository directory tree.
+    pub fn parse_structure(&self, repo_path: &str) -> RepoStructure {
+        let mut directories = Vec::new();
+        let mut files = Vec::new();
         let mut file_types = std::collections::HashMap::new();
-        for file in &files {
-            let ext = file.split('.').last().unwrap_or("rs");
-            *file_types.entry(ext.to_string()).or_insert(0u32) += 1;
+
+        fn walk(path: &str, dirs: &mut Vec<String>, files: &mut Vec<String>, types: &mut std::collections::HashMap<String, u32>) {
+            let mut entries = match std::fs::read_dir(path) {
+                Ok(e) => e,
+                Err(_) => return,
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                let full_path = path.to_string_lossy().to_string();
+
+                if path.is_dir() {
+                    // Skip common non-source directories
+                    let skip = ["node_modules", ".git", "target", "vendor", ".cargo", "dist", "build", "__pycache__"];
+                    if !skip.iter().any(|s| name.starts_with(s)) {
+                        let rel = RepoParser::relative_path(path.parent().unwrap(), &path);
+                        dirs.push(rel);
+                        walk(&full_path, dirs, files, types);
+                    }
+                } else {
+                    let rel = RepoParser::relative_path(path.parent().unwrap(), &path);
+                    files.push(rel);
+                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                        *types.entry(ext.to_string()).or_insert(0) += 1;
+                    } else {
+                        *types.entry("toml".to_string()).or_insert(0) += 1; // Cargo.toml, etc.
+                    }
+                }
+            }
         }
+
+        walk(repo_path, &mut directories, &mut files, &mut file_types);
+
+        // Add root-level "files" as a pseudo-directory
+        directories.insert(0, ".".to_string());
 
         RepoStructure {
             directories,
@@ -78,9 +65,20 @@ impl RepoParser {
             file_types,
         }
     }
+
+    fn relative_path(from: &std::path::Path, to: &std::path::Path) -> String {
+        let from_str = from.to_string_lossy();
+        let to_str = to.to_string_lossy();
+        if to_str.starts_with(&*from_str) {
+            let suffix = &to_str[from_str.len()..];
+            suffix.trim_start_matches('/').to_string()
+        } else {
+            to_str.to_string()
+        }
+    }
 }
 
-/// Detect technology stack from file structure and package files.
+/// Detect technology stack from file structure and package files in a real repo.
 pub struct TechStackDetector;
 
 impl TechStackDetector {
@@ -88,17 +86,55 @@ impl TechStackDetector {
         Self
     }
 
-    /// Detect tech stack from a repo structure.
-    pub fn detect(&self) -> Vec<String> {
-        // Simulated detection — in production, this checks actual package files
-        vec![
-            "Rust".to_string(),
-            "tokio".to_string(),
-            "clap".to_string(),
-            "serde".to_string(),
-            "rusqlite".to_string(),
-            "tracing".to_string(),
-            "axum".to_string(),
-        ]
+    /// Detect tech stack from a repository directory.
+    pub fn detect(&self, repo_path: &str) -> Vec<String> {
+        let mut stack = Vec::new();
+        let base = std::path::Path::new(repo_path);
+
+        // Check for Rust
+        if base.join("Cargo.toml").exists() {
+            stack.push("Rust".to_string());
+            if let Ok(content) = std::fs::read_to_string(base.join("Cargo.toml")) {
+                for dep in ["tokio", "serde", "clap", "axum", "tokio-util", "tracing", "futures", "bytes", "url", "uuid", "sha2", "rand", "async-trait", "git2", "reqwest", "rusqlite", "toml", "chrono", "anyhow", "thiserror", "colored"] {
+                    if content.contains(dep) {
+                        stack.push(dep.to_string());
+                    }
+                }
+            }
+        }
+
+        // Check for Node.js/TypeScript
+        if base.join("package.json").exists() {
+            stack.push("Node.js".to_string());
+            if let Ok(content) = std::fs::read_to_string(base.join("package.json")) {
+                for dep in ["react", "vue", "next", "express", "typescript", "tailwindcss", "webpack", "vite", "jest"] {
+                    if content.contains(dep) {
+                        stack.push(dep.to_string());
+                    }
+                }
+            }
+        }
+
+        // Check for Python
+        if base.join("pyproject.toml").exists() || base.join("setup.py").exists() {
+            stack.push("Python".to_string());
+        }
+        if base.join("go.mod").exists() {
+            stack.push("Go".to_string());
+        }
+        if base.join("pom.xml").exists() || base.join("build.gradle").exists() {
+            stack.push("Java".to_string());
+        }
+        if base.join("go.mod").exists() {
+            if let Ok(content) = std::fs::read_to_string(base.join("go.mod")) {
+                for dep in ["gin", "echo", "fiber", "gorm", "zap", "slog"] {
+                    if content.contains(dep) {
+                        stack.push(dep.to_string());
+                    }
+                }
+            }
+        }
+
+        stack
     }
 }
