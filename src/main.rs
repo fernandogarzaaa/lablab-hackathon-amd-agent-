@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use chimera_builder::cli::AnalyzeCommand;
+use chimera_builder::cli::{AnalyzeCommand, DemoCommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "chimera-builder", version, about = "Autonomous Multi-Agent Software Engineering System")]
@@ -17,6 +17,8 @@ struct Cli {
 enum Commands {
     /// Analyze a GitHub repository and generate improvements
     Analyze(AnalyzeCommand),
+    /// Run a simulated agent loop with live terminal output
+    Demo(DemoCommand),
 }
 
 #[tokio::main]
@@ -33,5 +35,6 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Analyze(cmd) => cmd.run().await,
+        Commands::Demo(cmd) => cmd.run().await,
     }
 }

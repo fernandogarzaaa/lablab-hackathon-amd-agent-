@@ -32,6 +32,23 @@ cargo build --release
 ./target/release/chimera-builder analyze https://github.com/example/repo
 ```
 
+## Try It
+
+No Rust install? Try the demo in one command:
+
+```bash
+docker build -t chimera-builder .
+docker run --rm chimera-builder
+```
+
+Or with cargo:
+
+```bash
+cargo run -- demo
+```
+
+The demo runs the full agent loop — Analyst → Planner → Builder → Tester → Critic — with live terminal output, confidence scores, and a final verdict. Zero config, zero API keys.
+
 ## Agent Descriptions
 
 | Agent | Role | Key Tools |
