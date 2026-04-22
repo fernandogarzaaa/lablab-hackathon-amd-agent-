@@ -365,20 +365,3 @@ pub struct AgentConfig {
     pub min_confidence: f64,
     pub max_iterations: u32,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelConfig {
-    pub model: String,
-    pub max_tokens: u32,
-    pub temperature: f64,
-}
-
-impl Default for ModelConfig {
-    fn default() -> Self {
-        Self {
-            model: "claude-sonnet-4-20250514".to_string(),
-            max_tokens: 4096,
-            temperature: 0.1,
-        }
-    }
-}

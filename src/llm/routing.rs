@@ -1,33 +1,44 @@
 //! ModelRouter — routes requests to appropriate models per agent.
 
-use crate::llm::client::LlmClient;
-use crate::llm::client::ModelConfig;
+use crate::llm::client::AnyProvider;
+use crate::llm::config::{RoutingConfig, ProviderType};
 use serde::{Deserialize, Serialize};
 
 /// Routes agent requests to appropriate LLM models.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelRouter {
-    default: ModelConfig,
-    per_agent: std::collections::HashMap<String, ModelConfig>,
+    default_provider: ProviderType,
+    routing: RoutingConfig,
 }
 
 impl ModelRouter {
-    pub fn new(default: ModelConfig) -> Self {
+    pub fn new(default_provider: ProviderType, routing: RoutingConfig) -> Self {
         Self {
-            default,
-            per_agent: std::collections::HashMap::new(),
+            default_provider,
+            routing,
         }
     }
 
-    pub fn add_agent_model(&mut self, agent: &str, config: ModelConfig) {
-        self.per_agent.insert(agent.to_string(), config);
-    }
-
-    pub fn get_config(&self, agent: &str) -> ModelConfig {
-        self.per_agent.get(agent).cloned().unwrap_or_else(|| self.default.clone())
-    }
-
-    pub fn create_client(&self, agent: &str) -> LlmClient {
-        LlmClient::new(self.get_config(agent))
+    /// Create a LlmClient for a specific agent.
+    pub fn create_client(&self, agent: &str) -> Option<crate::llm::LlmClient> {
+        let config = self.routing.create_provider_config(agent);
+        let provider = match &config.provider {
+            ProviderType::Anthropic => AnyProvider::Anthropic(
+                crate::llm::providers::AnthropicProvider::new(config.clone())
+            ),
+            ProviderType::OpenAi => AnyProvider::OpenAi(
+                crate::llm::providers::OpenAiProvider::new(config.clone())
+            ),
+            ProviderType::Ollama => AnyProvider::Ollama(
+                crate::llm::providers::OllamaProvider::new(config.clone())
+            ),
+            ProviderType::Vllm => AnyProvider::Vllm(
+                crate::llm::providers::VllmProvider::new(config.clone())
+            ),
+            ProviderType::LlamaCpp => AnyProvider::LlamaCpp(
+                crate::llm::providers::LlamaCppProvider::new(config.clone())
+            ),
+        };
+        Some(crate::llm::LlmClient::new(provider, config))
     }
 }

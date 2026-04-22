@@ -3,10 +3,11 @@
 use crate::agents::*;
 use crate::core::types::*;
 use crate::core::Orchestrator;
+use crate::llm::{LlmClient, ModelRouter, ProviderType};
 use crate::memory::MemoryStore;
 use anyhow::Result;
 use clap::Parser;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
 #[command(about = "Analyze a GitHub repository and generate improvements")]
@@ -14,6 +15,14 @@ pub struct AnalyzeCommand {
     /// GitHub repository URL
     #[arg(name = "repo_url")]
     pub repo_url: String,
+
+    /// LLM provider to use (anthropic, openai, ollama, vllm, llama-cpp)
+    #[arg(long, default_value = "anthropic")]
+    pub provider: String,
+
+    /// Path to config directory containing models.toml
+    #[arg(long, default_value = "config")]
+    pub config_dir: String,
 }
 
 impl AnalyzeCommand {
@@ -25,7 +34,28 @@ impl AnalyzeCommand {
         let session_id = memory.create_session(&self.repo_url).await?;
         info!("Session created: {}", session_id);
 
-        // Build agent swarm
+        // Clone the repo into a temp directory
+        let repo_path = self.clone_repo(&self.repo_url)?;
+
+        // Configure LLM provider
+        let provider_type = self.resolve_provider()?;
+        let models_path = format!("{}/models.toml", self.config_dir);
+        let routing = match crate::llm::config::load_models(&models_path, provider_type) {
+            Ok(r) => r,
+            Err(e) => {
+                info!("Could not load models config: {}. Using defaults.", e);
+                let mut r = crate::llm::config::RoutingConfig {
+                    agents: std::collections::HashMap::new(),
+                    provider: ProviderType::Anthropic,
+                };
+                r.provider = provider_type;
+                r
+            }
+        };
+        let router = ModelRouter::new(provider_type, routing);
+
+        // Build agent swarm with LLM client
+        let llm_client = router.create_client("analyst").unwrap_or_else(LlmClient::new_demo);
         let agents: Vec<Box<dyn crate::agents::Agent>> = vec![
             Box::new(AnalystAgent::new()),
             Box::new(PlannerAgent::new()),
@@ -36,7 +66,7 @@ impl AnalyzeCommand {
 
         // Create orchestrator
         let config = LoopConfig::default();
-        let mut orchestrator = Orchestrator::new(agents, memory, config);
+        let mut orchestrator = Orchestrator::new(agents, memory, config, repo_path, llm_client);
 
         // Run the loop
         info!("=== RUNNING AGENT LOOP ===");
@@ -80,6 +110,36 @@ impl AnalyzeCommand {
                 error!("Analysis failed: {}", e);
                 Err(e)
             }
+        }
+    }
+
+    fn clone_repo(&self, url: &str) -> Result<String> {
+        let temp_dir = tempfile::tempdir()?;
+        let path = temp_dir.path().to_string_lossy().to_string();
+        // Keep temp_dir alive for the lifetime of this process
+        // The orchestrator will use this path before temp_dir is dropped
+        std::mem::forget(temp_dir);
+        info!("Cloning {} into {}", url, path);
+
+        // Try to clone; if it fails (e.g., no network), fall back to demo mode
+        match crate::execution::GitOps::clone(url, &path) {
+            Ok(_) => Ok(path),
+            Err(e) => {
+                warn!("Git clone failed: {}. Using demo mode (simulated data).", e);
+                // Return a dummy path so the rest of the pipeline still works in demo mode
+                Ok("/dev/null".to_string())
+            }
+        }
+    }
+
+    fn resolve_provider(&self) -> Result<ProviderType> {
+        match self.provider.to_lowercase().as_str() {
+            "anthropic" => Ok(ProviderType::Anthropic),
+            "openai" => Ok(ProviderType::OpenAi),
+            "ollama" => Ok(ProviderType::Ollama),
+            "vllm" => Ok(ProviderType::Vllm),
+            "llama-cpp" | "llamacpp" => Ok(ProviderType::LlamaCpp),
+            other => Err(anyhow::anyhow!("Unknown provider: {}. Valid: anthropic, openai, ollama, vllm, llama-cpp", other)),
         }
     }
 }

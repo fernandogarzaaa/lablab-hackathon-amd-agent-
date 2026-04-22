@@ -7,6 +7,8 @@ use serde_json::Value;
 pub struct AgentContext {
     pub iteration: u32,
     pub abilities: Vec<String>,
+    pub repo_path: Option<String>,
+    pub llm_client: Option<crate::llm::LlmClient>,
 }
 
 impl AgentContext {
@@ -14,7 +16,19 @@ impl AgentContext {
         Self {
             iteration,
             abilities: Vec::new(),
+            repo_path: None,
+            llm_client: None,
         }
+    }
+
+    pub fn with_repo_path(mut self, path: String) -> Self {
+        self.repo_path = Some(path);
+        self
+    }
+
+    pub fn with_llm_client(mut self, client: crate::llm::LlmClient) -> Self {
+        self.llm_client = Some(client);
+        self
     }
 }
 

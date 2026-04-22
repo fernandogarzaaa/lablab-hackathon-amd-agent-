@@ -3,6 +3,7 @@
 use crate::agents::base::AgentContext;
 use crate::core::state::{LoopState, RunningState};
 use crate::core::types::*;
+use crate::llm::LlmClient;
 use crate::middleware::ConfidenceMiddleware;
 use crate::memory::MemoryStore;
 use anyhow::Result;
@@ -15,10 +16,18 @@ pub struct Orchestrator {
     agents: Vec<Box<dyn crate::agents::Agent>>,
     memory: MemoryStore,
     middleware: ConfidenceMiddleware,
+    repo_path: String,
+    llm_client: LlmClient,
 }
 
 impl Orchestrator {
-    pub fn new(agents: Vec<Box<dyn crate::agents::Agent>>, memory: MemoryStore, config: LoopConfig) -> Self {
+    pub fn new(
+        agents: Vec<Box<dyn crate::agents::Agent>>,
+        memory: MemoryStore,
+        config: LoopConfig,
+        repo_path: String,
+        llm_client: LlmClient,
+    ) -> Self {
         let middleware = ConfidenceMiddleware::new();
         Self {
             state: LoopState::running(config.max_iterations),
@@ -26,6 +35,8 @@ impl Orchestrator {
             agents,
             memory,
             middleware,
+            repo_path,
+            llm_client,
         }
     }
 
@@ -97,11 +108,18 @@ impl Orchestrator {
         Err(anyhow::anyhow!("Aborted: {}", reason))
     }
 
+    fn make_context(&self, iteration: u32) -> AgentContext {
+        let mut ctx = AgentContext::new(iteration);
+        ctx.repo_path = Some(self.repo_path.clone());
+        ctx.llm_client = Some(self.llm_client.clone());
+        ctx
+    }
+
     async fn execute_plan_phase(&mut self, iteration: u32) -> Result<PlanOutput> {
         let analyst = self.agents.iter().find(|a| a.name() == "analyst").unwrap();
         let planner = self.agents.iter().find(|a| a.name() == "planner").unwrap();
 
-        let ctx = AgentContext::new(iteration);
+        let ctx = self.make_context(iteration);
         let analysis = analyst.run(Value::Null, &ctx).await?;
         let analysis_clone = analysis.clone();
 
@@ -119,7 +137,7 @@ impl Orchestrator {
         let builder = self.agents.iter().find(|a| a.name() == "builder").unwrap();
         let tester = self.agents.iter().find(|a| a.name() == "tester").unwrap();
 
-        let ctx = AgentContext::new(iteration);
+        let ctx = self.make_context(iteration);
         let build = builder.run(serde_json::to_value(&plan.plan).unwrap(), &ctx).await?;
 
         let built = self.middleware.process(build, 0.85).await?;
@@ -136,7 +154,7 @@ impl Orchestrator {
 
     async fn execute_evaluation_phase(&mut self, plan: &PlanOutput, exec: &ExecutionOutput, iteration: u32) -> Result<CritiqueOutput> {
         let critic = self.agents.iter().find(|a| a.name() == "critic").unwrap();
-        let ctx = AgentContext::new(iteration);
+        let ctx = self.make_context(iteration);
 
         let all_data = serde_json::json!({
             "plan": plan.plan,
