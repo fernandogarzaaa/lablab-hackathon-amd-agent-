@@ -17,7 +17,7 @@ pub struct AnalyzeCommand {
     #[arg(name = "repo_url")]
     pub repo_url: String,
 
-    /// LLM provider to use (anthropic, openai, ollama, vllm, llama-cpp)
+    /// LLM provider to use (anthropic, openai, ollama, openai-compatible)
     #[arg(long, default_value = "anthropic")]
     pub provider: String,
 
@@ -144,9 +144,8 @@ impl AnalyzeCommand {
             "anthropic" => Ok(ProviderType::Anthropic),
             "openai" => Ok(ProviderType::OpenAi),
             "ollama" => Ok(ProviderType::Ollama),
-            "vllm" => Ok(ProviderType::Vllm),
-            "llama-cpp" | "llamacpp" => Ok(ProviderType::LlamaCpp),
-            other => Err(anyhow::anyhow!("Unknown provider: {}. Valid: anthropic, openai, ollama, vllm, llama-cpp", other)),
+            "openai-compatible" | "openai_compat" | "compatible" => Ok(ProviderType::OpenAiCompatible),
+            other => Err(anyhow::anyhow!("Unknown provider: {}. Valid: anthropic, openai, ollama, openai-compatible", other)),
         }
     }
 }

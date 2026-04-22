@@ -1,58 +1,23 @@
-//! llama.cpp server provider (OpenAI-compatible endpoint).
+//! Generic OpenAI-compatible chat completions provider.
 //!
-//! POST http://localhost:8080/v1/chat/completions
+//! Works with any server that implements the OpenAI chat completions API:
+//! vLLM, llama.cpp server, Ollama (in OpenAI mode), local proxies, etc.
+//!
+//! POST {base_url}/v1/chat/completions
+//! Header: Authorization: Bearer {api_key}
 
 use crate::llm::config::ProviderType;
+use crate::llm::providers::types::{OpenAiRequest, OpenAiResponse};
 use crate::llm::LlmProvider;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize)]
-struct LlamaCppRequest {
-    model: String,
-    messages: Vec<LlamaCppMessage>,
-    max_tokens: u32,
-    temperature: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct LlamaCppMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct LlamaCppResponse {
-    choices: Vec<LlamaCppChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LlamaCppChoice {
-    message: LlamaCppChoiceMessage,
-}
-
-#[derive(Debug, Deserialize)]
-struct LlamaCppChoiceMessage {
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct LlamaCppError {
-    error: LlamaCppErrorDetail,
-}
-
-#[derive(Debug, Deserialize)]
-struct LlamaCppErrorDetail {
-    message: String,
-}
 
 #[derive(Clone)]
-pub struct LlamaCppProvider {
+pub struct OpenAiCompatibleProvider {
     client: reqwest::Client,
     config: crate::llm::config::ProviderConfig,
 }
 
-impl LlamaCppProvider {
+impl OpenAiCompatibleProvider {
     pub fn new(config: crate::llm::config::ProviderConfig) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -61,14 +26,14 @@ impl LlamaCppProvider {
     }
 
     async fn do_generate(&self, system: &str, prompt: &str) -> Result<String> {
-        let body = LlamaCppRequest {
+        let body = OpenAiRequest {
             model: self.config.model.model.clone(),
             messages: vec![
-                LlamaCppMessage {
+                crate::llm::providers::types::OpenAiMessage {
                     role: "system".to_string(),
                     content: system.to_string(),
                 },
-                LlamaCppMessage {
+                crate::llm::providers::types::OpenAiMessage {
                     role: "user".to_string(),
                     content: prompt.to_string(),
                 },
@@ -87,27 +52,27 @@ impl LlamaCppProvider {
         }
 
         let resp = req.send().await?;
-
         let status = resp.status();
         if !status.is_success() {
             let err_text = resp.text().await?;
-            return Err(anyhow::anyhow!("llama.cpp API error ({}): {}", status, err_text));
+            return Err(anyhow::anyhow!("OpenAI-compatible API error ({}): {}", status, err_text));
         }
 
-        let resp_body: LlamaCppResponse = resp.json().await?;
-
+        let resp_body: OpenAiResponse = resp.json().await?;
         resp_body
             .choices
             .into_iter()
-            .find_map(|c| if c.message.content.is_empty() { None } else { Some(c.message.content) })
-            .ok_or_else(|| anyhow::anyhow!("llama.cpp returned empty content"))
+            .find_map(|c| {
+                if c.message.content.is_empty() { None } else { Some(c.message.content) }
+            })
+            .ok_or_else(|| anyhow::anyhow!("OpenAI-compatible API returned empty content"))
     }
 }
 
 #[async_trait::async_trait]
-impl LlmProvider for LlamaCppProvider {
+impl LlmProvider for OpenAiCompatibleProvider {
     fn provider_type(&self) -> ProviderType {
-        ProviderType::LlamaCpp
+        ProviderType::OpenAiCompatible
     }
 
     async fn generate(&self, system: &str, prompt: &str) -> Result<String> {

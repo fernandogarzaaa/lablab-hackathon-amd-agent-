@@ -32,11 +32,8 @@ impl ModelRouter {
             ProviderType::Ollama => AnyProvider::Ollama(
                 crate::llm::providers::OllamaProvider::new(config.clone())
             ),
-            ProviderType::Vllm => AnyProvider::Vllm(
-                crate::llm::providers::VllmProvider::new(config.clone())
-            ),
-            ProviderType::LlamaCpp => AnyProvider::LlamaCpp(
-                crate::llm::providers::LlamaCppProvider::new(config.clone())
+            ProviderType::OpenAiCompatible => AnyProvider::OpenAiCompatible(
+                crate::llm::providers::OpenAiCompatibleProvider::new(config.clone())
             ),
         };
         Some(crate::llm::LlmClient::new(provider, config))

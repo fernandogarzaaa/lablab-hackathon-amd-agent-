@@ -23,8 +23,9 @@ pub enum ProviderType {
     Anthropic,
     OpenAi,
     Ollama,
-    Vllm,
-    LlamaCpp,
+    /// Any server that implements the OpenAI chat completions API
+    /// (vLLM, llama.cpp, local proxies, etc.).
+    OpenAiCompatible,
 }
 
 impl std::fmt::Display for ProviderType {
@@ -33,8 +34,7 @@ impl std::fmt::Display for ProviderType {
             ProviderType::Anthropic => write!(f, "anthropic"),
             ProviderType::OpenAi => write!(f, "openai"),
             ProviderType::Ollama => write!(f, "ollama"),
-            ProviderType::Vllm => write!(f, "vllm"),
-            ProviderType::LlamaCpp => write!(f, "llama-cpp"),
+            ProviderType::OpenAiCompatible => write!(f, "openai-compatible"),
         }
     }
 }
@@ -63,17 +63,12 @@ impl ProviderConfig {
                 "http://localhost:11434".to_string(),
                 None,
             ),
-            ProviderType::Vllm => (
-                std::env::var("VLLM_API_URL")
+            // OpenAiCompatible: use env var or well-known default for the target server
+            ProviderType::OpenAiCompatible => (
+                std::env::var("OPENAI_COMPATIBLE_URL")
                     .ok()
                     .unwrap_or_else(|| "http://localhost:8000".to_string()),
-                std::env::var("VLLM_API_KEY").ok(),
-            ),
-            ProviderType::LlamaCpp => (
-                std::env::var("LLAMA_CPP_API_URL")
-                    .ok()
-                    .unwrap_or_else(|| "http://localhost:8080".to_string()),
-                None,
+                std::env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
             ),
         };
         Self {
@@ -95,7 +90,7 @@ pub struct RoutingConfig {
 }
 
 fn default_provider() -> ProviderType {
-    ProviderType::Anthropic
+    ProviderType::OpenAiCompatible
 }
 
 impl RoutingConfig {

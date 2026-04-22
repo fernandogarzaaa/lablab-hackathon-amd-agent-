@@ -1,51 +1,9 @@
-//! OpenAI-compatible chat completions API.
-//!
-//! POST https://api.openai.com/v1/chat/completions
-//! Header: Authorization: Bearer {api_key}
+//! OpenAI chat completions provider.
 
 use crate::llm::config::ProviderType;
+use crate::llm::providers::types::{OpenAiRequest, OpenAiResponse};
 use crate::llm::LlmProvider;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize)]
-struct OpenAiRequest {
-    model: String,
-    messages: Vec<OpenAiMessage>,
-    max_tokens: u32,
-    temperature: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct OpenAiMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiResponse {
-    choices: Vec<OpenAiChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiChoice {
-    message: OpenAiChoiceMessage,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiChoiceMessage {
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiError {
-    error: OpenAiErrorDetail,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiErrorDetail {
-    message: String,
-}
 
 #[derive(Clone)]
 pub struct OpenAiProvider {
@@ -65,11 +23,11 @@ impl OpenAiProvider {
         let body = OpenAiRequest {
             model: self.config.model.model.clone(),
             messages: vec![
-                OpenAiMessage {
+                crate::llm::providers::types::OpenAiMessage {
                     role: "system".to_string(),
                     content: system.to_string(),
                 },
-                OpenAiMessage {
+                crate::llm::providers::types::OpenAiMessage {
                     role: "user".to_string(),
                     content: prompt.to_string(),
                 },
@@ -88,7 +46,6 @@ impl OpenAiProvider {
         }
 
         let resp = req.send().await?;
-
         let status = resp.status();
         if !status.is_success() {
             let err_text = resp.text().await?;
@@ -96,11 +53,12 @@ impl OpenAiProvider {
         }
 
         let resp_body: OpenAiResponse = resp.json().await?;
-
         resp_body
             .choices
             .into_iter()
-            .find_map(|c| if c.message.content.is_empty() { None } else { Some(c.message.content) })
+            .find_map(|c| {
+                if c.message.content.is_empty() { None } else { Some(c.message.content) }
+            })
             .ok_or_else(|| anyhow::anyhow!("OpenAI returned empty content"))
     }
 }

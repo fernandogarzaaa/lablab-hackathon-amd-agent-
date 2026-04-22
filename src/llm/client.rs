@@ -13,8 +13,7 @@ pub enum AnyProvider {
     Anthropic(crate::llm::providers::AnthropicProvider),
     OpenAi(crate::llm::providers::OpenAiProvider),
     Ollama(crate::llm::providers::OllamaProvider),
-    Vllm(crate::llm::providers::VllmProvider),
-    LlamaCpp(crate::llm::providers::LlamaCppProvider),
+    OpenAiCompatible(crate::llm::providers::OpenAiCompatibleProvider),
     Demo(DemoProvider),
 }
 
@@ -25,9 +24,8 @@ impl LlmProvider for AnyProvider {
             AnyProvider::Anthropic(p) => p.provider_type(),
             AnyProvider::OpenAi(p) => p.provider_type(),
             AnyProvider::Ollama(p) => p.provider_type(),
-            AnyProvider::Vllm(p) => p.provider_type(),
-            AnyProvider::LlamaCpp(p) => p.provider_type(),
-            AnyProvider::Demo(_) => crate::llm::config::ProviderType::Anthropic,
+            AnyProvider::OpenAiCompatible(p) => p.provider_type(),
+            AnyProvider::Demo(_) => crate::llm::config::ProviderType::OpenAiCompatible,
         }
     }
 
@@ -36,8 +34,7 @@ impl LlmProvider for AnyProvider {
             AnyProvider::Anthropic(p) => p.generate(system, prompt).await,
             AnyProvider::OpenAi(p) => p.generate(system, prompt).await,
             AnyProvider::Ollama(p) => p.generate(system, prompt).await,
-            AnyProvider::Vllm(p) => p.generate(system, prompt).await,
-            AnyProvider::LlamaCpp(p) => p.generate(system, prompt).await,
+            AnyProvider::OpenAiCompatible(p) => p.generate(system, prompt).await,
             AnyProvider::Demo(p) => p.generate(system, prompt).await,
         }
     }
@@ -76,7 +73,7 @@ impl LlmClient {
     /// Create a demo (stub) LlmClient that returns simulated responses without hitting any API.
     pub fn new_demo() -> Self {
         let config = crate::llm::config::ProviderConfig::new(
-            crate::llm::config::ProviderType::Anthropic,
+            crate::llm::config::ProviderType::OpenAiCompatible,
             crate::llm::config::ModelConfig::default(),
         );
         Self {
@@ -103,7 +100,7 @@ pub struct DemoProvider;
 #[async_trait::async_trait]
 impl LlmProvider for DemoProvider {
     fn provider_type(&self) -> crate::llm::config::ProviderType {
-        crate::llm::config::ProviderType::Anthropic
+        crate::llm::config::ProviderType::OpenAiCompatible
     }
 
     async fn generate(&self, _system: &str, prompt: &str) -> Result<String> {
