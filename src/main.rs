@@ -9,6 +9,10 @@ use chimera_builder::cli::{AnalyzeCommand, DemoCommand};
 #[derive(Parser, Debug)]
 #[command(name = "chimera-builder", version, about = "Autonomous Multi-Agent Software Engineering System")]
 struct Cli {
+    /// Enable verbose (debug-level) logging
+    #[arg(long, short = 'v', global = true)]
+    verbose: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -25,12 +29,16 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Initialize tracing
+    // Initialize tracing with verbosity support
+    let filter = if cli.verbose {
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "debug".into())
+    } else {
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "info".into())
+    };
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
-        )
+        .with_env_filter(filter)
         .init();
 
     match cli.command {

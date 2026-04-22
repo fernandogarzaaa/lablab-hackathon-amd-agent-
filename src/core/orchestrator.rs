@@ -48,6 +48,35 @@ impl Orchestrator {
         }
     }
 
+    /// Run the orchestrator in dry-run mode: plan only, no execution.
+    pub async fn run_dry(&mut self) -> Result<FinalOutput> {
+        let ctx = self.make_context(0);
+        let analyst = self.agents.iter().find(|a| a.name() == "analyst").unwrap();
+        let planner = self.agents.iter().find(|a| a.name() == "planner").unwrap();
+
+        let analysis = analyst.run(Value::Null, &ctx).await?;
+        let analysis_clone = analysis.clone();
+
+        let analyzed = self.middleware.process(analysis, 0.85).await?;
+
+        let plan = planner.run(analyzed.data, &ctx).await?;
+
+        let plan_val: Plan = serde_json::from_value(plan["plan"].clone())?;
+        let audit_val: AuditReport = serde_json::from_value(analysis_clone["audit_report"].clone())?;
+
+        Ok(FinalOutput {
+            repo_url: String::new(),
+            audit_report: audit_val,
+            plan: plan_val,
+            build_output: None,
+            test_output: None,
+            final_verdict: Verdict::Approve,
+            total_iterations: 0,
+            abilities_extracted: Vec::new(),
+            session_trace: Vec::new(),
+        })
+    }
+
     pub async fn run(&mut self) -> Result<FinalOutput> {
         let RunningState { ref mut current_iteration, .. } = match &mut self.state {
             LoopState::Running(s) => s.clone(),

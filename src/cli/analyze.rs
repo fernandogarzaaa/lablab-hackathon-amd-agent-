@@ -1,10 +1,12 @@
 //! Analyze command handler.
 
 use crate::agents::*;
+use crate::cli::validate_analyze_command;
 use crate::core::types::*;
 use crate::core::Orchestrator;
 use crate::execution::{FileManager, CodeRunner};
 use crate::llm::{LlmClient, ModelRouter, ProviderType};
+use crate::llm::client_shared::{HttpClientConfig, SharedHttpClient};
 use crate::memory::MemoryStore;
 use anyhow::Result;
 use clap::Parser;
@@ -24,10 +26,39 @@ pub struct AnalyzeCommand {
     /// Path to config directory containing models.toml
     #[arg(long, default_value = "config")]
     pub config_dir: String,
+
+    /// Enable verbose (debug-level) logging
+    #[arg(long, short = 'v')]
+    pub verbose: bool,
+
+    /// Run without executing any changes (dry run)
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Maximum number of self-improvement iterations (1-100)
+    #[arg(long, default_value_t = 3)]
+    pub max_iterations: u32,
+
+    /// Minimum confidence threshold to accept changes (0.0-1.0)
+    #[arg(long, default_value = "0.85")]
+    pub min_confidence: f64,
 }
 
 impl AnalyzeCommand {
     pub async fn run(self) -> Result<()> {
+        // Validate arguments early
+        let (validation_result, warnings) = validate_analyze_command(
+            &self.repo_url,
+            &self.provider,
+            &self.config_dir,
+            self.max_iterations,
+            self.min_confidence,
+        );
+        for w in &warnings {
+            warn!("{}: {}", "VALIDATION WARNING", w);
+        }
+        validation_result?;
+
         info!("Starting Chimera Builder analysis: {}", self.repo_url);
 
         // Create memory store
@@ -53,7 +84,9 @@ impl AnalyzeCommand {
                 r
             }
         };
-        let router = ModelRouter::new(provider_type, routing);
+        let http_config = HttpClientConfig::default();
+        let shared_client = SharedHttpClient::new(&http_config);
+        let router = ModelRouter::new(provider_type, routing, shared_client);
 
         // Build agent swarm with LLM client
         let llm_client = router.create_client("analyst").unwrap_or_else(LlmClient::new_demo);
@@ -70,14 +103,25 @@ impl AnalyzeCommand {
         let code_runner = CodeRunner::new();
 
         // Create orchestrator
-        let config = LoopConfig::default();
+        let config = LoopConfig {
+            max_iterations: self.max_iterations,
+            min_confidence: self.min_confidence,
+            ..LoopConfig::default()
+        };
+        if self.dry_run {
+            info!("DRY RUN MODE — no changes will be executed");
+        }
         let mut orchestrator = Orchestrator::new(
             agents, memory, config, repo_path, llm_client, file_manager, code_runner,
         );
 
         // Run the loop
         info!("=== RUNNING AGENT LOOP ===");
-        let result = orchestrator.run().await;
+        let result = if self.dry_run {
+            orchestrator.run_dry().await
+        } else {
+            orchestrator.run().await
+        };
 
         match result {
             Ok(output) => {

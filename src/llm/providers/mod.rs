@@ -8,3 +8,4 @@ pub use anthropic::AnthropicProvider;
 pub use openai::OpenAiProvider;
 pub use ollama::OllamaProvider;
 pub use openai_compat::OpenAiCompatibleProvider;
+pub use crate::llm::client_shared::SharedHttpClient;
