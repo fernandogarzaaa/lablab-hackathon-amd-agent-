@@ -3,6 +3,7 @@
 use crate::agents::*;
 use crate::core::types::*;
 use crate::core::Orchestrator;
+use crate::execution::{FileManager, CodeRunner};
 use crate::llm::{LlmClient, ModelRouter, ProviderType};
 use crate::memory::MemoryStore;
 use anyhow::Result;
@@ -64,9 +65,15 @@ impl AnalyzeCommand {
             Box::new(CriticAgent::new()),
         ];
 
+        // Create execution tools
+        let file_manager = FileManager::new(repo_path.clone());
+        let code_runner = CodeRunner::new();
+
         // Create orchestrator
         let config = LoopConfig::default();
-        let mut orchestrator = Orchestrator::new(agents, memory, config, repo_path, llm_client);
+        let mut orchestrator = Orchestrator::new(
+            agents, memory, config, repo_path, llm_client, file_manager, code_runner,
+        );
 
         // Run the loop
         info!("=== RUNNING AGENT LOOP ===");
