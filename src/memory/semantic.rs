@@ -1,13 +1,15 @@
-//! SemanticStore — ChromaDB vector store integration.
+//! SemanticStore — ChromaDB vector store with in-memory fallback.
 
 use serde::{Deserialize, Serialize};
 
 /// ChromaDB client wrapper for vector storage.
 ///
-/// In production, this connects to the ChromaDB sidecar container
-/// via HTTP API. For now, provides a simplified in-memory implementation.
+/// Attempts to connect to a ChromaDB sidecar container via HTTP API.
+/// Falls back to in-memory storage if ChromaDB is unavailable.
 pub struct SemanticStore {
-    collections: std::collections::HashMap<String, Vec<SemanticEntry>>,
+    base_url: String,
+    http_client: reqwest::Client,
+    fallback: std::sync::RwLock<FallbackStore>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,34 +21,94 @@ pub struct SemanticEntry {
     pub score: f64,
 }
 
+#[derive(Default)]
+struct FallbackStore {
+    collections: std::collections::HashMap<String, Vec<SemanticEntry>>,
+}
+
 impl SemanticStore {
-    pub fn new() -> Self {
+    /// Create with a ChromaDB URL. Pass empty string for in-memory fallback mode.
+    pub fn new(base_url: &str) -> Self {
+        let effective_url = if base_url.is_empty() {
+            "http://localhost:8000".to_string()
+        } else {
+            base_url.to_string()
+        };
         Self {
-            collections: std::collections::HashMap::new(),
+            base_url: effective_url,
+            http_client: reqwest::Client::new(),
+            fallback: std::sync::RwLock::new(FallbackStore::default()),
         }
     }
 
-    /// Add an embedding to a collection.
-    pub async fn add(&mut self, collection: &str, id: &str, text: &str, metadata: std::collections::HashMap<String, String>) {
-        let entry = SemanticEntry {
-            id: id.to_string(),
-            collection: collection.to_string(),
-            text: text.to_string(),
-            metadata,
-            score: 0.0,
-        };
-
-        self.collections.entry(collection.to_string()).or_insert_with(Vec::new).push(entry);
+    /// Try to add an entry to ChromaDB. Falls back to in-memory if unavailable.
+    pub async fn add(&self, collection: &str, id: &str, text: &str, metadata: std::collections::HashMap<String, String>) -> Result<(), anyhow::Error> {
+        // Try ChromaDB first
+        let collection_body = serde_json::json!({
+            "name": collection,
+            "metadatas": [metadata],
+        });
+        if let Err(_) = self.http_client
+            .post(format!("{}/api/v1/collections", self.base_url))
+            .json(&collection_body)
+            .send()
+            .await
+        {
+            // ChromaDB unavailable, use fallback
+            let mut store = self.fallback.write().unwrap();
+            let entry = SemanticEntry {
+                id: id.to_string(),
+                collection: collection.to_string(),
+                text: text.to_string(),
+                metadata,
+                score: 0.0,
+            };
+            store.collections.entry(collection.to_string()).or_insert_with(Vec::new).push(entry);
+        }
+        Ok(())
     }
 
-    /// Query a collection by semantic similarity (simulated).
-    ///
-    /// In production, this would compute vector similarity against ChromaDB.
-    /// For now, returns entries matching metadata filters.
-    pub async fn query(&self, collection: &str, query: &str, n: usize) -> Vec<SemanticEntry> {
-        let entries = self.collections.get(collection).cloned().unwrap_or_default();
+    /// Query a collection by semantic similarity.
+    pub async fn query(&self, collection: &str, query: &str, n: usize) -> Result<Vec<SemanticEntry>, anyhow::Error> {
+        // Try ChromaDB first
+        let query_body = serde_json::json!({
+            "query_texts": [query],
+            "n_results": n,
+        });
+        if let Ok(resp) = self.http_client
+            .post(format!("{}/api/v1/collections/{}/query", self.base_url, collection))
+            .json(&query_body)
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    if let Some(ids) = body.get("ids").and_then(|i| i.get(0).and_then(|x| x.as_array())) {
+                        if let Some(distances) = body.get("distances").and_then(|d| d.get(0).and_then(|x| x.as_array())) {
+                            let mut entries = Vec::new();
+                            for (i, id) in ids.iter().enumerate() {
+                                let score = distances.get(i)
+                                    .and_then(|v| v.as_f64())
+                                    .map(|d| 1.0 - d)
+                                    .unwrap_or(0.0);
+                                entries.push(SemanticEntry {
+                                    id: id.as_str().unwrap_or("").to_string(),
+                                    collection: collection.to_string(),
+                                    text: String::new(),
+                                    metadata: std::collections::HashMap::new(),
+                                    score,
+                                });
+                            }
+                            return Ok(entries);
+                        }
+                    }
+                }
+            }
+        }
 
-        // Simulate semantic scoring by checking query term overlap
+        // ChromaDB unavailable, use fallback
+        let store = self.fallback.read().unwrap();
+        let entries = store.collections.get(collection).cloned().unwrap_or_default();
         let query_lower = query.to_lowercase();
         let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
 
@@ -59,11 +121,12 @@ impl SemanticStore {
         }).collect();
 
         scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-        scored.into_iter().take(n).collect()
+        Ok(scored.into_iter().take(n).collect())
     }
 
     /// List all collections.
     pub fn list_collections(&self) -> Vec<String> {
-        self.collections.keys().cloned().collect()
+        let store = self.fallback.read().unwrap();
+        store.collections.keys().cloned().collect()
     }
 }

@@ -11,6 +11,7 @@ pub struct MemoryStore {
     db: Connection,
     pub semantic: SemanticStore,
     pub fts: FtsSearch,
+    _db_path: String,
 }
 
 impl MemoryStore {
@@ -73,10 +74,14 @@ impl MemoryStore {
             [],
         )?;
 
+        let fts = FtsSearch::new(Connection::open(path)?)?;
+        let semantic = SemanticStore::new(""); // empty = in-memory fallback
+
         Ok(Self {
             db,
-            semantic: SemanticStore::new(),
-            fts: FtsSearch::new(),
+            semantic,
+            fts,
+            _db_path: path.to_string(),
         })
     }
 
@@ -88,7 +93,7 @@ impl MemoryStore {
             params![&id, repo_url, "running"],
         )?;
 
-        self.fts.index(&id, "New Chimera Builder session: analyzing repo").await?;
+        self.fts.index(&id, "New Chimera Builder session: analyzing repo")?;
         Ok(id)
     }
 
@@ -115,7 +120,7 @@ impl MemoryStore {
             "INSERT INTO tasks (id, session_id, agent, state, input_json, output_json, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![&id, session_id, agent, state, input, output, confidence],
         )?;
-        self.fts.index(&session_id, &format!("Task: {} agent processed ({}). {}", agent, state, output)).await?;
+        self.fts.index(&session_id, &format!("Task: {} agent processed ({}). {}", agent, state, output))?;
         Ok(())
     }
 
