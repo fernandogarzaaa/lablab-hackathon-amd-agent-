@@ -1,0 +1,72 @@
+[package]
+name = "chimera-builder"
+version = "0.1.0"
+edition = "2021"
+description = "Autonomous Multi-Agent Software Engineering System"
+license = "MIT"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Tracing/logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Traits
+async-trait = "0.1"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Git operations
+git2 = "0.19"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+tempfile = "3"
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Cryptography (for integrity proofs, hashes)
+sha2 = "0.10"
+hex = "0.4"
+
+# Random
+rand = "0.8"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Config
+toml = "0.8"
+
+# Iteration utilities
+itertools = "0.14"
+
+# HTTP server (for confidence middleware MCP bridge)
+axum = { version = "0.8", features = ["json"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors"] }
+
+# Error path display
+serde_path_to_error = "0.1"
+
+# Compression (for trajectory compression)
+zstd = "0.13"
+
+# Fuzzy matching for code comparison
+levenshtein = "1.0"
+
+[dev-dependencies]
+tempfile = "3"

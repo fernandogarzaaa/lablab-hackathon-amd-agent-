@@ -1,0 +1,31 @@
+# Model routing for Chimera Builder
+
+[model.default]
+model = "claude-sonnet-4-20250514"
+max_tokens = 4096
+temperature = 0.1
+
+[model.analyst]
+model = "claude-sonnet-4-20250514"
+max_tokens = 3000
+temperature = 0.05
+
+[model.planner]
+model = "claude-sonnet-4-20250514"
+max_tokens = 4096
+temperature = 0.1
+
+[model.builder]
+model = "claude-sonnet-4-20250514"
+max_tokens = 4096
+temperature = 0.1
+
+[model.tester]
+model = "claude-sonnet-4-20250514"
+max_tokens = 3000
+temperature = 0.05
+
+[model.critic]
+model = "claude-sonnet-4-20250514"
+max_tokens = 2000
+temperature = 0.0

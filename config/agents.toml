@@ -1,0 +1,41 @@
+# Agent definitions for Chimera Builder
+
+[[agents]]
+name = "analyst"
+role = "Repository understanding"
+goal = "Analyze codebase structure, tech stack, and detect issues"
+mcp_tools = ["chimera_detect", "chimera_confident"]
+min_confidence = 0.80
+max_iterations = 3
+
+[[agents]]
+name = "planner"
+role = "Roadmap generation"
+goal = "Generate prioritized roadmap and break down work"
+mcp_tools = ["chimera_confident", "chimera_gate"]
+min_confidence = 0.85
+max_iterations = 3
+
+[[agents]]
+name = "builder"
+role = "Code implementation"
+goal = "Implement improvements and write production-quality code"
+mcp_tools = ["chimera_detect", "chimera_prove"]
+min_confidence = 0.85
+max_iterations = 3
+
+[[agents]]
+name = "tester"
+role = "User behavior simulation"
+goal = "Validate usability and check for regressions"
+mcp_tools = ["chimera_detect", "chimera_explore"]
+min_confidence = 0.80
+max_iterations = 3
+
+[[agents]]
+name = "critic"
+role = "Cross-agent output review"
+goal = "Verify consistency and make final approval decision"
+mcp_tools = ["chimera_gate", "chimera_audit", "chimera_prove"]
+min_confidence = 0.90
+max_iterations = 1
