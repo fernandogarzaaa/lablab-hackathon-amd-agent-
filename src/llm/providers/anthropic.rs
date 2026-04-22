@@ -34,16 +34,6 @@ struct AnthropicContent {
     text: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct AnthropicError {
-    error: AnthropicErrorDetail,
-}
-
-#[derive(Debug, Deserialize)]
-struct AnthropicErrorDetail {
-    message: String,
-}
-
 #[derive(Clone)]
 pub struct AnthropicProvider {
     client: reqwest::Client,

@@ -26,10 +26,6 @@ struct OllamaResponse {
     message: OllamaMessage,
 }
 
-#[derive(Debug, Deserialize)]
-struct OllamaError {
-    error: String,
-}
 
 #[derive(Clone)]
 pub struct OllamaProvider {

@@ -85,8 +85,7 @@ chimera-builder/
 │   └── main.rs       # Entry point
 ├── config/           # Agent + model configs
 ├── prompts/          # Agent prompt templates
-├── tests/            # Integration tests
-└── benches/          # Benchmarks
+└── tests/            # Integration tests
 ```
 
 ## License

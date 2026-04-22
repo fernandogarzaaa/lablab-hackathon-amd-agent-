@@ -80,12 +80,15 @@ impl Agent for PlannerAgent {
 
         let mut roadmap = Vec::new();
         let mut total_cost = 0.0;
+        let mut plan_confidence = 0.88;
 
         // Try LLM for roadmap generation
         if let Some(ref llm) = ctx.llm_client {
             if let Some(llm_plan) = self.try_llm_plan(&input, &tech_stack, llm).await {
+                let llm_confidence = llm_plan.confidence;
                 roadmap = llm_plan.roadmap.into_iter().map(Into::into).collect();
                 total_cost = llm_plan.total_estimated_cost;
+                plan_confidence = llm_confidence;
             }
         }
 
@@ -111,13 +114,13 @@ impl Agent for PlannerAgent {
         let plan = Plan {
             roadmap,
             total_estimated_cost: total_cost,
-            confidence: 0.88,
+            confidence: plan_confidence,
         };
 
         Ok(serde_json::json!({
             "plan": plan,
             "tech_stack": tech_stack,
-            "confidence": 0.88,
+            "confidence": plan.confidence,
         }))
     }
 

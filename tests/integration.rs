@@ -1,7 +1,7 @@
 //! Integration tests for Chimera Builder.
 
 use chimera_builder::agents::{AnalystAgent, PlannerAgent, BuilderAgent, CriticAgent, Agent, base::AgentContext};
-use chimera_builder::core::types::Verdict;
+
 use chimera_builder::memory::MemoryStore;
 use chimera_builder::memory::compression::{extract_abilities, AbilityCategory};
 
